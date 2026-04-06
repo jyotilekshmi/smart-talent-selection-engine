@@ -1,0 +1,100 @@
+import streamlit as st
+import PyPDF2
+import docx
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+st.title("Smart Talent Selection Engine")
+
+uploaded_files = st.file_uploader("Upload Resumes", accept_multiple_files=True)
+jd = st.text_area("Paste Job Description")
+
+# ----------- READ PDF -----------
+def read_pdf(file):
+    text = ""
+    try:
+        pdf_reader = PyPDF2.PdfReader(file)
+        for page in pdf_reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content
+    except:
+        pass
+    return text
+
+# ----------- READ DOCX ----------
+def read_docx(file):
+    text = ""
+    try:
+        doc = docx.Document(file)
+        for para in doc.paragraphs:
+            text += para.text
+    except:
+        pass
+    return text
+
+# ----------- MAIN LOGIC ----------
+if st.button("Analyze"):
+
+    # Input validation
+    if not uploaded_files:
+        st.error("⚠️ Upload at least one resume")
+        st.stop()
+
+    if not jd.strip():
+        st.error("⚠️ Enter Job Description")
+        st.stop()
+
+    st.write("🔄 Processing...")
+
+    resume_texts = []
+    names = []
+
+    # ----------- SINGLE LOOP ----------
+    for file in uploaded_files:
+        st.write(f"📄 Reading: {file.name}")
+
+        text = ""
+
+        if file.type == "application/pdf":
+            text = read_pdf(file)
+
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            text = read_docx(file)
+
+        else:
+            st.warning(f"{file.name} unsupported format")
+
+        if not text.strip():
+            st.warning(f"{file.name} has no readable text")
+
+        # IMPORTANT: limit size to avoid lag
+        resume_texts.append(text[:2000] if text else " ")
+        names.append(file.name)
+
+    st.write("🧠 Comparing resumes...")
+
+    try:
+        documents = resume_texts + [jd]
+
+        tfidf = TfidfVectorizer(stop_words='english')
+        vectors = tfidf.fit_transform(documents)
+
+        scores = cosine_similarity(vectors[-1], vectors[:-1])
+
+        # ----------- RESULTS ----------
+        results = []
+        for i, score in enumerate(scores[0]):
+            results.append((names[i], round(score * 100, 2)))
+
+        # Sort
+        results.sort(key=lambda x: x[1], reverse=True)
+
+        # ----------- DISPLAY ----------
+        st.subheader("🏆 Ranked Candidates")
+
+        for name, score in results:
+            st.write(f"👉 {name} — **{score}% match**")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
